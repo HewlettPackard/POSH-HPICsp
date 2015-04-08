@@ -2,11 +2,11 @@
 # HP Insight Control server provisioning PowerShell Library
 ##############################################################################
 ##############################################################################
-## (C) Copyright 2014 Hewlett-Packard Development Company, L.P.
+## (C) Copyright 2014-2015 Hewlett-Packard Development Company, L.P.
 ##############################################################################
 
 #Set HPICsp POSH Library Version
-$script:scriptVersion = "1.0"
+$script:scriptVersion = "1.01"
 
 # Default handle self-signed certs
 $script:SSLCheckFlag = $False
@@ -29,32 +29,32 @@ if (! ("PKI.HPInsightControl.SslCertificate" -as [type])) {
     using System.Threading;
 
 
-	// Namespace PKI.HPInsightControl used for SSL Certificate handling
-	namespace PKI {
-		namespace HPInsightControl {
-			public class SslCertificate {
-				public Uri OriginalURi;
-				public Uri ReturnedURi;
-				public X509Certificate2 Certificate;
-				public string Issuer;
-				public string Subject;
-				public string[] SubjectAlternativeNames;
-				public bool CertificateIsValid;
-				public string[] ErrorInformation;
-				public HttpWebResponse Response;
-			}
-     	}
+        // Namespace PKI.HPInsightControl used for SSL Certificate handling
+        namespace PKI {
+                namespace HPInsightControl {
+                        public class SslCertificate {
+                                public Uri OriginalURi;
+                                public Uri ReturnedURi;
+                                public X509Certificate2 Certificate;
+                                public string Issuer;
+                                public string Subject;
+                                public string[] SubjectAlternativeNames;
+                                public bool CertificateIsValid;
+                                public string[] ErrorInformation;
+                                public HttpWebResponse Response;
+                        }
+        }
     }
-	
+
     //Define the [System.Net.ServicePointManager]::CertificatePolicy for the library
     public class HPInsightControlIgnoreCertPolicy : ICertificatePolicy {
         public HPInsightControlIgnoreCertPolicy() {}
         public bool CheckValidationResult(
-	        ServicePoint sPoint, X509Certificate cert,
-	        WebRequest wRequest, int certProb) 
+                ServicePoint sPoint, X509Certificate cert,
+                WebRequest wRequest, int certProb)
             {
-		        return true;
-	        }
+                        return true;
+                }
     }
 "@
 }
@@ -69,7 +69,7 @@ If ($debugmode) {
 #Else{ $debugPreference = "SilentlyContinue" } # Hide debug messages
 
 $script:HPICAppliance = $null
-$global:cimgmtSessionId = $null
+$global:cimgmtICspSessionId = $null
 $script:lastWebResponse = $null
 $script:defaultTimeout = New-TimeSpan -Minutes 20
 
@@ -105,7 +105,7 @@ function verify-auth {
     <#
         .SYNOPSIS
         Verify user is authenticated.
-            
+
         .DESCRIPTION
         Internal module helper function to assist with verifying the user is authencticated to an appliance.  Will generate terminating error if not.
 
@@ -136,10 +136,10 @@ function verify-auth {
 
     Process {
 
-        If (!$global:cimgmtSessionId){
-			Write-Error -Message "You are not connected to an appliance. Recommended Action: Please use Connect-HPICmgmt to connect to your appliance." -Category AuthenticationError -CategoryTargetName $cmdlet -CategoryReason "Not connected" -RecommendedAction "Please use Connect-HPICmgmt to connect to your appliance."
-			break
-		}
+        If (!$global:cimgmtICspSessionId){
+                        Write-Error -Message "You are not connected to an appliance. Recommended Action: Please use Connect-HPICmgmt to connect to your appliance." -Category AuthenticationError -CategoryTargetName $cmdlet -CategoryReason "Not connected" -RecommendedAction "Please use Connect-HPICmgmt to connect to your appliance."
+                        break
+                }
     }
 }
 
@@ -147,11 +147,11 @@ function Send-HPICRequest {
     <#
         .SYNOPSIS
         Sends a request to the appliance
-            
+
         .DESCRIPTION
         Receives the request input, properly constructs and formats the request header and body and sends the request to the management appliance.  This is the main cmdlet that interacts with the appliance.
 
-		The message body can contain valid JSON data, with the correct URI and accepted HTTP method accepted by the target resource manager.
+                The message body can contain valid JSON data, with the correct URI and accepted HTTP method accepted by the target resource manager.
 
         .PARAMETER uri
         The uri that identifies the required resource on the appliance.
@@ -176,7 +176,7 @@ function Send-HPICRequest {
         If not specified, all members of the collection are returned from this function.
 
         .INPUTS
-        None. You cannot pipe objects to this cmdlet. 
+        None. You cannot pipe objects to this cmdlet.
 
         .OUTPUTS
         System.Array
@@ -191,7 +191,7 @@ function Send-HPICRequest {
 
         .EXAMPLE
         PS C:\> Send-HPICRequest "/rest/os-deployment-servers"
-        
+
         Returns all the server objects managed by the appliance.
 
         .EXAMPLE
@@ -200,7 +200,7 @@ function Send-HPICRequest {
         PS C:\> Send-HPICRequest $e.uri "PUT" $e
 
         Updates the name of the server object specified by the uri.
-          
+
     #>
 
     [CmdletBinding()]
@@ -211,7 +211,7 @@ function Send-HPICRequest {
 
          [parameter(Mandatory=$false)]
          [string]$method="GET",
-         
+
          [parameter(Mandatory=$false)]
          [object]$body=$null,
 
@@ -224,37 +224,37 @@ function Send-HPICRequest {
 
     )
 
-    Begin { 
+    Begin {
 
 
         #Check how to handle SSL Certificates
         if (! $script:SSLCheckFlag) {
 
-            
+
 
             #Out-Host is IMPORTANT, otherwise, the Certificate Details will NOT display when called from Connect-HPICMgmt, or any other cmdlet for that matter.
             Show-HPICSSLCertificate | Out-Host
 
             #If cert is untrusted, set ServicePointManager to ignore cert checking
-            if ($global:certTrusted -eq $False) { [System.Net.ServicePointManager]::CertificatePolicy = new-object HPInsightControlIgnoreCertPolicy }
+            if ($global:icspCertTrusted -eq $False) { [System.Net.ServicePointManager]::CertificatePolicy = new-object HPInsightControlIgnoreCertPolicy }
 
             $script:SSLCheckFlag = $True
         }
-    
+
         #Need to check for authenticated session when the URI passed is not value of $script:loginSessionsUri
         Write-Verbose "[SEND-HPICREQUEST] Requested URI: $($uri)"
-        If ((!$global:cimgmtSessionId ) -and ($uri -ine $script:loginSessionsUri)) {
+        If ((!$global:cimgmtICspSessionId ) -and ($uri -ine $script:loginSessionsUri)) {
             write-verbose "[SEND-HPICREQUEST] We have reached the URI Whitelist condition block"
 
             #URI Whitelist
-            if ($uri -eq $script:applUpdateMonitor) { Write-Verbose "[SEND-HPICREQUEST] Unauth request allowed." } #Allow the unauthenticated request 
-            elseif ($uri -eq $script:applXApiVersion) { Write-Verbose "[SEND-HPICREQUEST] Unauth request allowed." } #Allow the unauthenticated request 
-            elseif ($uri -eq "/ui-js/pages/") { Write-Verbose "[SEND-HPICREQUEST] Unauth request allowed." } #Allow the unauthenticated request 
-            elseif ($uri -eq $applEulaStatus) { Write-Verbose "[SEND-HPICREQUEST] Unauth request allowed." } #Allow the unauthenticated request 
-            elseif ($uri -eq $applEulaSave) { Write-Verbose "[SEND-HPICREQUEST] Unauth request allowed." } #Allow the unauthenticated request 
-            elseif ($uri -eq ($usersUri + "/changePassword")) { Write-Verbose "[SEND-HPICREQUEST] Unauth request allowed." } #Allow the unauthenticated request 
-            #elseif ($uri -eq "/startstop/rest/component?fields=status") { Write-Verbose "[SEND-HPICREQUEST] Unauth request allowed." } #Allow the unauthenticated request 
-            
+            if ($uri -eq $script:applUpdateMonitor) { Write-Verbose "[SEND-HPICREQUEST] Unauth request allowed." } #Allow the unauthenticated request
+            elseif ($uri -eq $script:applXApiVersion) { Write-Verbose "[SEND-HPICREQUEST] Unauth request allowed." } #Allow the unauthenticated request
+            elseif ($uri -eq "/ui-js/pages/") { Write-Verbose "[SEND-HPICREQUEST] Unauth request allowed." } #Allow the unauthenticated request
+            elseif ($uri -eq $applEulaStatus) { Write-Verbose "[SEND-HPICREQUEST] Unauth request allowed." } #Allow the unauthenticated request
+            elseif ($uri -eq $applEulaSave) { Write-Verbose "[SEND-HPICREQUEST] Unauth request allowed." } #Allow the unauthenticated request
+            elseif ($uri -eq ($usersUri + "/changePassword")) { Write-Verbose "[SEND-HPICREQUEST] Unauth request allowed." } #Allow the unauthenticated request
+            #elseif ($uri -eq "/startstop/rest/component?fields=status") { Write-Verbose "[SEND-HPICREQUEST] Unauth request allowed." } #Allow the unauthenticated request
+
             #Else, require authentication
             else {
                     Write-Verbose "[SEND-HPICREQUEST] Checking auth."
@@ -288,7 +288,7 @@ function Send-HPICRequest {
             #add start & count params to the URI
             if (-not ($uri -contains "?")) {
 
-                $uri += "?"    
+                $uri += "?"
 
             }
 
@@ -303,32 +303,32 @@ function Send-HPICRequest {
 
             if (-not ($uri -contains "?")) {
 
-                $uri += "?"   
-             
+                $uri += "?"
+
             }
 
             $uri += ("start=" + $start)
         }
 
         do {
-     
+
             $req = [System.Net.WebRequest]::Create("https://" + $script:HPICAppliance + $uri)
             $req.Method = $method
             $req.ContentType = "application/json"
             $req.Accept = "application/json"
-	        $req.Headers.Item("X-API-Version") = $MaxXAPIVersion
+                $req.Headers.Item("X-API-Version") = $MaxXAPIVersion
             $req.Headers.Item("accept-language") = "en"
             $req.Headers.Item("accept-encoding") = "gzip, deflate"
 
-            if ($global:cimgmtSessionId) {
+            if ($global:cimgmtICspSessionId) {
 
-                $req.Headers.Item("auth") = $global:cimgmtSessionId.sessionID
+                $req.Headers.Item("auth") = $global:cimgmtICspSessionId.sessionID
 
             }
 
             #Send the request with a messege
             if ($body) {
-            
+
                 write-Verbose "[SEND-HPICREQUEST] Body object found. Converting to JSON."
 
                 if ($method -eq "PUT") {
@@ -337,25 +337,25 @@ function Send-HPICRequest {
                     $req.Headers.Item("If-match") = $body.etag
 
                 }
- 
+
                 #Create a new stream writer to write the json to the request stream.
-		        $js = $body | ConvertTo-Json -Depth 99 -Compress
-		    
+                        $js = $body | ConvertTo-Json -Depth 99 -Compress
+
                 if ($body.GetType().ToString() -eq "System.Object[]") {
-			        $js = "[" + $js + "]"
+                                $js = "[" + $js + "]"
                 }
 
-		        write-verbose "[SEND-HPICREQUEST] Request Body: $($js)"
+                        write-verbose "[SEND-HPICREQUEST] Request Body: $($js)"
 
                 #Send the message
-		        $stream = New-Object IO.StreamWriter $req.GetRequestStream()
-		        $stream.AutoFlush = $True
-		        $stream.WriteLine($js)
-		        $stream.Close()
+                        $stream = New-Object IO.StreamWriter $req.GetRequestStream()
+                        $stream.AutoFlush = $True
+                        $stream.WriteLine($js)
+                        $stream.Close()
             }
 
             Write-Verbose "[SEND-HPICREQUEST] Request: $($method) https://$($script:HPICAppliance)$($uri)"
-   
+
             #Write Verbose the headers if needed
             $i = 0
             foreach ($h in $req.Headers) { Write-Verbose "[SEND-HPICREQUEST] Request Header: $($h) = $($req.Headers[$i])"; $i++ }
@@ -363,7 +363,7 @@ function Send-HPICRequest {
             try {
                 $i = 0
                 #just to be sure this is cleared, if an exception is thrown
-                $script:lastWebResponse = $null 
+                $script:lastWebResponse = $null
 
                 #Get response from appliance
                 $script:lastWebResponse = $req.GetResponse()
@@ -371,7 +371,7 @@ function Send-HPICRequest {
                 #Display the response status if verbose output is requested
                 Write-Verbose "[SEND-HPICREQUEST] Response Status: $([int]$script:lastWebResponse.StatusCode) $($script:lastWebResponse.StatusDescription)"
                 foreach ($h in $script:lastWebResponse.Headers) { Write-Verbose "[SEND-HPICREQUEST] Response Header: $($h) = $($script:lastWebResponse.Headers[$i])"; $i++ }
-        
+
                 #Decompress the response if encoded
                 switch ($script:lastWebResponse.Headers.Item("Content-Encoding")) {
 
@@ -386,10 +386,10 @@ function Send-HPICRequest {
                 $responseJson = $reader.ReadToEnd()
                 $decompress.Close();
                 $reader.Close();
-               
+
                 Write-Verbose "[SEND-HPICREQUEST] Response: $($responseJson | ConvertFrom-Json | out-string)"
                 $resp = ConvertFrom-json $responseJson
-             
+
 
                 #Handle multi-page result sets
                 if ($resp.members -and (-not $manualPaging)) {
@@ -444,7 +444,7 @@ function Send-HPICRequest {
                         #Error (REST API issue) -- asynch op with no Task object or Task URI returned!
                         Write-Error "REST API ERROR: The operation is asynchronous, but neither a Task resource or URI was returned!" -Category InvalidResult -CategoryTargetName "Send-HPICRequest"
                         Break
-                    
+
                     }
 
                     return $resp
@@ -454,14 +454,14 @@ function Send-HPICRequest {
                 else {
 
                     return $resp
-            
+
                 }
 
-           } 
-       
-            catch [Net.WebException] { 
+           }
+
+            catch [Net.WebException] {
                 Write-Verbose "[SEND-HPICREQUEST] Net.WebException Error caught"
-            
+
                 #write-host $_.Exception.Message -ForegroundColor Red
                 if ($_.Exception.InnerException) {
 
@@ -477,8 +477,8 @@ function Send-HPICRequest {
 
                     }
 
-                } 
-            
+                }
+
                 else {
 
                     if ($_.Exception.Response) {
@@ -503,25 +503,25 @@ function Send-HPICRequest {
                         "deflate" { $decompress = New-Object System.IO.Compression.DeflateStream ($script:lastWebResponse.GetResponseStream()),([IO.Compression.CompressionMode]::Decompress) }
                         default   { $decompress = $script:lastWebResponse.GetResponseStream() }
                     }
-                
+
                     $reader = New-Object System.IO.StreamReader($decompress)
                     $responseJson = $reader.ReadToEnd()
-                
+
                     Write-Verbose "[SEND-HPICREQUEST] ERROR RESPONSE: $($responseJson | ConvertFrom-Json | out-string)"
                     Write-Verbose "[SEND-HPICREQUEST] Response Status: HTTP_$([int]$script:lastWebResponse.StatusCode) $($script:lastWebResponse.StatusDescription)"
                     foreach ($h in $script:lastWebResponse.Headers) { Write-Verbose "[SEND-HPICREQUEST] Response Header: $($h) = $($script:lastWebResponse.Headers[$i])"; $i++ }
-                
+
                     $resp = $responseJson | ConvertFrom-Json
                     $resp | Add-Member -MemberType NoteProperty -Name statusCode -Value ([int]$script:lastWebResponse.StatusCode) -Force
 
                      #user is authorized
-                    if ([int]$script:lastWebResponse.StatusCode -eq 401) { 
-                        
-                        Write-Error "Your session has timed out or is not valid. Please use Connect-HPICMgmt to authenticate to your appliance." -Category AuthenticationError -CategoryReason "Unauthorized or Authentication timeout." 
+                    if ([int]$script:lastWebResponse.StatusCode -eq 401) {
+
+                        Write-Error "Your session has timed out or is not valid. Please use Connect-HPICMgmt to authenticate to your appliance." -Category AuthenticationError -CategoryReason "Unauthorized or Authentication timeout."
                         $script:HPICAppliance = $null
                         $Script:PromptApplianceHostname = "Not Connected"
                         $Appliance = $null
-                        $global:cimgmtSessionId = $null
+                        $global:cimgmtICspSessionId = $null
 
                     }
 
@@ -529,7 +529,7 @@ function Send-HPICRequest {
                     if (([int]$script:lastWebResponse.StatusCode -eq 503) -or ([int]$script:lastWebResponse.StatusCode -eq 0)) {
                         Wait-HPICApplianceStart
                         return (Send-HPICRequest $uri $method $body)
-                    } 
+                    }
 
                     return $resp
 
@@ -559,7 +559,7 @@ function Wait-HPICApplianceStart {
 
         .SYNOPSIS
         Process to wait for Appliance Web Services to start.
-            
+
         .DESCRIPTION
         Internal module helper function to wait for the appliance services to start.  This helper function will be called by Send-HPICRequest
         when the [System.Net.WebRequest] GetResponse() client generates an [Net.WebException] exception.  Then, this function will be called
@@ -568,7 +568,7 @@ function Wait-HPICApplianceStart {
             1. An initial text-based progress bar while the System.Net.WebRequest is able to access Apache on the appliance to begin polling
                for service startup status.
             2. Write-Progress indicator displaying the overall service startup.
-            
+
         If any service fails to startup, this function will cause a terminating error, informing the caller to go visit the appliance kiosk
         console to get more information about the startup error.
 
@@ -595,7 +595,7 @@ function Wait-HPICApplianceStart {
     Process {
 
         do {
-            
+
             $req = [System.Net.WebRequest]::Create("https://" + $script:HPICAppliance + "/startstop/rest/component?fields=status")
             $req.Method = "GET"
             $req.ContentType = "application/json"
@@ -604,7 +604,7 @@ function Wait-HPICApplianceStart {
             $req.Headers.Item("accept-encoding") = "gzip, deflate"
 
             #just to be sure this is cleared, if an exception is thrown
-            $script:lastWebResponse = $null 
+            $script:lastWebResponse = $null
             try {
 
                 #Get response from appliance
@@ -633,13 +633,13 @@ function Wait-HPICApplianceStart {
                 $reader.Close();
 
                 $resp = ConvertFrom-json $responseJson
-    
+
                 #Will keep track of the number of services in RUNNING
                 $serviceCount = ($resp.members.status | Where-Object {$_ -eq "RUNNING"} | measure).Count
 
                 #Check to see if any of the services entered a FAILED state.
-                if ($resp.members.status | Where-Object { $_ -eq "FAILED" }) { 
-        
+                if ($resp.members.status | Where-Object { $_ -eq "FAILED" }) {
+
                     #If so, terminate.
                     write-error "One or more services failed to start. Please visit the console to get a support dump and contact your support representative." -Category OperationStopped -CategoryTargetName "Wait-HPICApplianceStart"
                     Break
@@ -657,7 +657,7 @@ function Wait-HPICApplianceStart {
             #Catch if we haven't received HTTP 200, as we should display a nice message stating services are still beginning to start
             catch [Net.WebException] {
 
-                write-verbose "$([int]$script:lastWebResponse.StatusCode)" 
+                write-verbose "$([int]$script:lastWebResponse.StatusCode)"
 
                 #Only want to display this message once.
                 if (! $flag) {
@@ -687,19 +687,19 @@ function Connect-HPICMgmt {
 
         .DESCRIPTION
         Establish a connection with the specified HP Insight Control server provisioning appliance.  Logs the user into the appliance and establishes a session for use with subsequent requests.  Prompts will be displayed for any omitted values.
-        
-		Appliance hostname or IP can include an alternate TCP port number.  While the appliance does not allow the default TCP port 443 to be changed, the appliance could reside behind a firewall, which is redirecting an alternate TCP port number.
+
+                Appliance hostname or IP can include an alternate TCP port number.  While the appliance does not allow the default TCP port 443 to be changed, the appliance could reside behind a firewall, which is redirecting an alternate TCP port number.
 
         .PARAMETER appliance
         The hostname or IP address of the appliance.
 
-		.PARAMETER User
-		Alias [-u]
-		User name to authenticate. 
+                .PARAMETER User
+                Alias [-u]
+                User name to authenticate.
 
-		.PARAMETER Password
-		Alias [-p]
-		Password to log into the appliance.
+                .PARAMETER Password
+                Alias [-p]
+                Password to log into the appliance.
 
         .PARAMETER authProvider
         The Directory Name for LDAP/Active Directory authentication, or LOCAL for appliance internal user accounts.  Default is LOCAL.
@@ -763,7 +763,7 @@ function Connect-HPICMgmt {
 
         #Lock X-API-Version to no greater than version 102 as bindings were developed for use with API version 102
         if ($script:MaxXAPIVersion -gt 102) { $script:MaxXAPIVersion = 102 }
- 
+
     }
 
     Process {
@@ -779,57 +779,57 @@ function Connect-HPICMgmt {
         try {
 
             write-verbose "[CONNECT-HPICMGMT] Sending auth request"
-            
+
             $resp = Send-HPICRequest $script:loginSessionsUri POST $authinfo
             $global:er = $resp
             Write-Verbose "[CONNECT-HPICMGMT] RESP: $($resp)"
             #If a sessionID is returned, then the user has authenticated
             if ($resp.sessionID) {
-            
 
-                
+
+
                 write-verbose "[CONNECT-HPICMGMT] Session token received: $($resp.sessionID)"
-                
+
                 #Change the prompt to display the hostname value, which will replace the string "Not Connected"
                 $Script:PromptApplianceHostname = $Appliance
                 write-verbose "[CONNECT-HPICMGMT] Setting PromptApplianceHostname to: $($Appliance)"
 
                 #Store the entire auth request for later deletion when issuing Disconnect-HPICmgmt
-                $global:cimgmtSessionId = $resp
-                
-                #Add the Appliance Name to the cimgmtSessionId PsCustomObject
-                $global:cimgmtSessionId | add-member -MemberType NoteProperty -name Appliance -value $script:HPICAppliance
-                
+                $global:cimgmtICspSessionId = $resp
+
+                #Add the Appliance Name to the cimgmtICspSessionId PsCustomObject
+                $global:cimgmtICspSessionId | add-member -MemberType NoteProperty -name Appliance -value $script:HPICAppliance
+
                 #Used for the custom display prompt
-			    $script:userName = $User
+                            $script:userName = $User
 
                 #used for the Show-HPICAppliance CMDLET
                 $script:applianceConnectedTo = [pscustomobject]@{User = $User; Domain = $authProvider; Appliance = $Appliance}
-               
+
                 $newconnection = New-Object PsObject
 
-                $global:cimgmtSessionId.psobject.properties | % {
+                $global:cimgmtICspSessionId.psobject.properties | % {
                     $newconnection | Add-Member -MemberType $_.MemberType -Name $_.Name -Value $_.Value
                 }
 
                 $newconnection | Add-Member -MemberType NoteProperty -Name User -Value $User
                 $newconnection | Add-Member -MemberType NoteProperty -Name authProvider -Value $authProvider
 
-                return $newconnection                
-               
+                return $newconnection
+
             }
 
-            else { 
-            
-            return $resp 
-            
+            else {
+
+            return $resp
+
             }
-        } 
-    
+        }
+
         catch [Net.WebException] {
             Write-Verbose "[CONNECT-HPICMGMT] Response: $($resp)"
             write-Error "The appliance at $Appliance is not responding on the network." -Category ConnectionError -CategoryTargetName "Connect-HPICMgmt"
-            $global:cimgmtSessionId = $Null
+            $global:cimgmtICspSessionId = $Null
             $script:userName = $Null
             $script:HPICAppliance = $Null
             $Script:PromptApplianceHostname = "[Not Connected]"
@@ -841,7 +841,7 @@ function Set-HPICConnection {
     <#
         .SYNOPSIS
         Changes the global connection to one saved in a variable
-            
+
         .DESCRIPTION
         If a user plans to make multiple connections and keep the sessions running, it is recommended that all connections returned from Connect-HPICMgmt be saved as variables.
         Call this cmdlet with those saved connections to set the current global appliance connection.
@@ -855,7 +855,7 @@ function Set-HPICConnection {
         .OUTPUT
         None.
     #>
-   
+
     [CmdletBinding()]
     Param(
 
@@ -871,31 +871,31 @@ function Set-HPICConnection {
     Process {
 
         $script:HPICAppliance = $appliance.Appliance
-                
+
         #Change the prompt to display the hostname value, which will replace the string "Not Connected"
         $Script:PromptApplianceHostname = $appliance.Appliance
         write-verbose "[Set-HPICConnection] Setting PromptApplianceHostname to: $($appliance.Appliance)"
 
         #Store the auth as a global
-        $global:cimgmtSessionId = $appliance
-                
-        #Add the Appliance Name to the cimgmtSessionId PsCustomObject
-        $global:cimgmtSessionId.Appliance = $appliance.Appliance
-                
+        $global:cimgmtICspSessionId = $appliance
+
+        #Add the Appliance Name to the cimgmtICspSessionId PsCustomObject
+        $global:cimgmtICspSessionId.Appliance = $appliance.Appliance
+
         #Used for the custom display prompt
-		$script:userName = $appliance.User
+                $script:userName = $appliance.User
 
         #used for the Show-HPICAppliance CMDLET
         $script:applianceConnectedTo = [pscustomobject]@{User = $appliance.User; Domain = $appliance.authProvider; Appliance = $appliance.Appliance}
 
         $script:SSLCheckFlag = $False
-                
+
     }
 }
 
 function Show-HPICAppliance {
 
-    
+
     <#
         .SYNOPSIS
         Display the HP Insight Control server provisioning connected to.
@@ -912,7 +912,7 @@ function Show-HPICAppliance {
 
         .LINK
         Connect-HPICMgmt
-	
+
 
         .EXAMPLE
         PS C:\> Show-HPICAppliance
@@ -928,13 +928,13 @@ function Show-HPICAppliance {
     Param()
 
     Begin {
-    
+
         verify-auth "Show-HPICAppliance"
-    
+
     }
 
     Process {
-    
+
 
         if ($script:applianceConnectedTo) {
 
@@ -953,7 +953,7 @@ function Show-HPICAppliance {
             Write-Host -Foregroundcolor Red "Not connected"
 
         }
-    
+
     }
 
 }
@@ -977,14 +977,14 @@ function Disconnect-HPICMgmt {
 
         .EXAMPLE
         PS C:\>  Disconnect-HPICMgmt
-            
+
     #>
-    
+
     [CmdletBinding()]
     Param()
 
     Begin {
-        If (!$global:cimgmtSessionId) { 
+        If (!$global:cimgmtICspSessionId) {
             Write-Warning "Not connected"
             Break
         }
@@ -993,16 +993,16 @@ function Disconnect-HPICMgmt {
     Process {
 
         Write-Verbose "[DISCONNECT-HPICMGMT] Sending Delete Session ID request"
-        Send-HPICRequest $loginSessionsUri DELETE $global:cimgmtSessionId
-    
+        Send-HPICRequest $loginSessionsUri DELETE $global:cimgmtICspSessionId
+
         if ([int]$script:lastWebResponse.StatusCode -eq 204) {
-        
+
             Write-Verbose "[DISCONNECT-HPICMGMT] Successfully logged off"
             $script:SSLCheckFlag = $False
             $script:HPICAppliance = $null
             $Script:PromptApplianceHostname = "Not Connected"
             $Appliance = $null
-            $global:cimgmtSessionId = $null
+            $global:cimgmtICspSessionId = $null
         }
         else {
             Write-Verbose "[DISCONNECT-HPICMGMT] Logoff request failed. Response code: $([int]$script:lastWebResponse.StatusCode)"
@@ -1042,7 +1042,7 @@ function New-HPICResource {
 
         .LINK
         Remove-HPICResource
-            
+
     #>
 
     [CmdletBinding()]
@@ -1102,7 +1102,7 @@ function Set-HPICResource {
 
         .LINK
         Remove-HPICResource
-            
+
     #>
     [CmdletBinding()]
     Param (
@@ -1112,7 +1112,7 @@ function Set-HPICResource {
          [ValidateScript({$_.Uri})]
          [object]$resource
     )
-    
+
     Begin {
 
         verify-auth "Set-HPICResource"
@@ -1126,7 +1126,7 @@ function Set-HPICResource {
         Send-HPICRequest $uri PUT $resource
 
     }
-}    
+}
 
 function Remove-HPICResource {
  <#
@@ -1136,10 +1136,10 @@ function Remove-HPICResource {
         .DESCRIPTION
         Removes a resource identified by either the resource uri or a resource object.
         Remove-HPICResource can be called with either -nameOrUri or -resource.
-            
+
         .PARAMETER resource
         A resource object to be deleted. The resource object should first be retrieved
-        by a call to a Get-HPICxxx call.  
+        by a call to a Get-HPICxxx call.
 
         .PARAMETER nameOruri
         The name or uri of the resource to be deleted.
@@ -1150,7 +1150,7 @@ function Remove-HPICResource {
 
         .OUTPUTS
         System.Management.Automation.PSCustomObject
-		    Removal async task.
+                    Removal async task.
 
         .LINK
         Send-HPICRequest
@@ -1160,9 +1160,9 @@ function Remove-HPICResource {
 
         .LINK
         Set-HPICResource
-         
-    #>   
-     
+
+    #>
+
     [CmdletBinding()]
     Param (
           [parameter(Mandatory = $true, ValueFromPipeline = $true,
@@ -1188,14 +1188,14 @@ function Remove-HPICResource {
     }
 
     Process {
-         
+
         $deleteUri = $null
-        switch ($PsCmdlet.ParameterSetName) { 
+        switch ($PsCmdlet.ParameterSetName) {
 
             "resource"  { $deleteUri = $resource.uri }
-         
+
             "nameOrUri"  {
-                
+
                 #nameOrUri value is a URI
                 if($nameOrUri.StartsWith("/rest")){
 
@@ -1205,7 +1205,7 @@ function Remove-HPICResource {
 
                 #It's a string value
                 else {
-                    
+
                     #Use Index filtering to locate object
                     $resources = Send-HPICRequest ($indexUri + "?filter=name = '$nameOrUri'")
 
@@ -1222,15 +1222,15 @@ function Remove-HPICResource {
                         else { $deleteUri = $resources.uri }
                     }
 
-                    else { 
-                    
+                    else {
+
                         Write-Error "Resource '$nameOrUri' not found" -Category ObjectNotFound -CategoryTargetName "Remove-HPICResource"
-                        Break    
+                        Break
                     }
                 }
-            }     
+            }
         }
-    
+
         if ($deleteUri) {
             Send-HPICRequest $deleteUri DELETE
         }
@@ -1271,15 +1271,15 @@ function Show-HPICSSLCertificate {
     #>
 
     [CmdletBinding()]
-    param( 
-    
+    param(
+
         [parameter(Mandatory=$false)]
         [String]$Appliance = $script:HPICAppliance
-    
+
     )
 
-    Begin { 
-    
+    Begin {
+
         if (! $Appliance ) {
 
             Write-Error "You are not connected to an appliance.  Please specify the -appliance parameter and provide the appliance FQDN, Hostname or IP Address." -Category InvalidArgument
@@ -1287,7 +1287,7 @@ function Show-HPICSSLCertificate {
             Break
 
         }
-    
+
     }
 
     Process {
@@ -1310,7 +1310,7 @@ function Show-HPICSSLCertificate {
 
             try {$SAN = ($Cert.Extensions | Where-Object {$_.Oid.Value -eq "2.5.29.17"}).Format(0) -split ", "}
             catch {$SAN = $null}
-            $chain = New-Object Security.Cryptography.X509Certificates.X509Chain 
+            $chain = New-Object Security.Cryptography.X509Certificates.X509Chain
 
             [void]$chain.ChainPolicy.ApplicationPolicy.Add("1.3.6.1.5.5.7.3.1")
             $Status = $chain.Build($Cert)
@@ -1331,14 +1331,14 @@ function Show-HPICSSLCertificate {
             }
 
             #If the certificate is NOT valid, display it and warn user
-            if ((! $certObject.CertificateIsValid) -and ($certObject.ErrorInformation -eq "UntrustedRoot")) { 
-        
+            if ((! $certObject.CertificateIsValid) -and ($certObject.ErrorInformation -eq "UntrustedRoot")) {
+
                 write-verbose "[SHOW-HPICSSLCertificate] Cert is NOT trusted"
 
                 #Display the certificate output in Yellow
                 $originalFGColor = [System.Console]::ForegroundColor
                 [System.Console]::ForegroundColor = [System.ConsoleColor]::Yellow
-            
+
                 #Display certificate details
                 $certObject
 
@@ -1348,12 +1348,12 @@ function Show-HPICSSLCertificate {
                 Write-Warning "The appliance SSL Certificate is UNTRUSTED.  Use the Import-HPICSSLCertificate to import the appliance Self-Signed certificate to your user accounts local Trusted Root Certification Authorities store to not display this warning when you first connect to your appliance."
 
                 #Value will be False, in String format, not Bool
-                $global:certTrusted = $certObject.CertificateIsValid
-            
+                $global:icspCertTrusted = $certObject.CertificateIsValid
+
             }
 
             elseif ($certObject.CertificateIsValid) {
-                
+
                 write-verbose "[SHOW-HPICSSLCertificate] Cert is trusted"
 
                 if ($VerbosePreference -eq "Continue") {
@@ -1361,7 +1361,7 @@ function Show-HPICSSLCertificate {
                     #Display the certificate output in Green
                     $originalFGColor = [System.Console]::ForegroundColor
                     [System.Console]::ForegroundColor = [System.ConsoleColor]::Green
-            
+
                     #Display certificate details
                     $certObject
 
@@ -1370,24 +1370,24 @@ function Show-HPICSSLCertificate {
 
                 }
 
-                $global:certTrusted = $certObject.CertificateIsValid
+                $global:icspCertTrusted = $certObject.CertificateIsValid
             }
 
             else {
                 Write-Error $Error[0]
             }
 
-            
+
             $chain.Reset()
 
-        } 
-        
-        else {
-        
-            Write-Error $Error[0]
-        
         }
-    
+
+        else {
+
+            Write-Error $Error[0]
+
+        }
+
         $certObject = $Null
         $WebRequest = $Null
     }
@@ -1421,7 +1421,7 @@ function Import-HPICSslCertificate {
 
         .EXAMPLE
         PS C:\> Connect-HPICMgmt test.example.com Administrator MyP@ssword
-        PS C:\> Import-HPICSslCertificate 
+        PS C:\> Import-HPICSslCertificate
         Import the SSL Certificate from the existing connection provided by the Connect-HPICMgmt cmdlet.
 
         .LINK
@@ -1429,13 +1429,13 @@ function Import-HPICSslCertificate {
 
     #>
 
-	[CmdletBinding()]
+        [CmdletBinding()]
     param(
         [parameter(Mandatory=$false)]
         [String]$Appliance = $script:HPICAppliance
     )
 
-	begin {
+        begin {
 
         if (! $Appliance) {
 
@@ -1446,21 +1446,21 @@ function Import-HPICSslCertificate {
         }
 
     }
-	
-	process {
+
+        process {
 
         $ConnectString = "https://$Appliance"
-        
+
         $WebRequest = [Net.WebRequest]::Create($ConnectString)
 
         try {$Response = $WebRequest.GetResponse()}
-        catch [Net.WebException] { 
+        catch [Net.WebException] {
 
             if ( !($WebRequest.Connection) -and ([int]$Response.StatusCode -eq 0)) {
 
                 Write-Error $_.Exception.Message -Category ObjectNotFound
 
-            } 
+            }
 
         }
 
@@ -1473,7 +1473,7 @@ function Import-HPICSslCertificate {
             $Cert = [Security.Cryptography.X509Certificates.X509Certificate2]$WebRequest.ServicePoint.Certificate #.Handle
 
             $StoreScope = "CurrentUser"
-            $StoreName = "Root" 
+            $StoreName = "Root"
 
             #Save to users Trusted Root Authentication Hosts store
             $store = New-Object System.Security.Cryptography.X509Certificates.X509Store $StoreName, $StoreScope
@@ -1501,8 +1501,8 @@ function Import-HPICSslCertificate {
         }
 
     }
-	
-	end	{ Write-Warning "Please note that the Subject Alternate Name (SAN) must match that of the Appliance hostname you use to connect to your appliance.  If it does not, an SSL conenction failure will ocurr.  When creating a CSR on the appliance, make sure to include the additional FQDN and IP address(es) in the Alternative Name field." }
+
+        end     { Write-Warning "Please note that the Subject Alternate Name (SAN) must match that of the Appliance hostname you use to connect to your appliance.  If it does not, an SSL conenction failure will ocurr.  When creating a CSR on the appliance, make sure to include the additional FQDN and IP address(es) in the Alternative Name field." }
 }
 
 function Upload-File {
@@ -1525,10 +1525,10 @@ function Upload-File {
         .OUTPUTS
         Write-Progress
             The progress of uploading the file to the appliance.
-	
+
     #>
-	[CmdletBinding()]
-	Param (
+        [CmdletBinding()]
+        Param (
         [parameter(Mandatory=$true,
         HelpMessage="Specify the upload URI.",
         Position=0)]
@@ -1536,22 +1536,22 @@ function Upload-File {
         [Alias('u')]
         [string]$uri,
 
-		[parameter(Mandatory=$true,
+                [parameter(Mandatory=$true,
         HelpMessage="Enter the path and file name to upload.",
         Position=1)]
         [Alias('f')]
         [ValidateScript({Test-Path $_})]
-		[string]$File
-	)
+                [string]$File
+        )
 
     Begin {
 
         write-verbose "[UPLOAD-FILE] Validating user is authenticated"
         verify-auth "Upload-File"
     }
-    
+
     Process {
-        $authinfo = $global:cimgmtSessionId.sessionID
+        $authinfo = $global:cimgmtICspSessionId.sessionID
 
         $fsmode = [System.IO.FileMode]::Open
         $fsread = [System.IO.FileAccess]::Read
@@ -1578,7 +1578,7 @@ function Upload-File {
             $uploadRequest.Headers.Item("uploadfilename") = $filename
             $uploadRequest.AllowWriteStreamBuffering = $false
             $uploadRequest.SendChunked = $true
-            
+
             $fs = New-Object IO.FileStream ($fileObj,$fsmode, $fsread)
             $uploadRequest.ContentLength = $fs.length
 
@@ -1603,17 +1603,17 @@ function Upload-File {
             $rs.write($contentType,0,$contentType.Length);
 
             #This is used to keep track of the file upload progress.
-            $numBytesToRead = $fs.Length    
+            $numBytesToRead = $fs.Length
             $numBytesRead = 0
 
             do {
-		        $byteCount = $fs.Read($readbuffer,0,1048576)
-		        $rs.write($readbuffer,0,$byteCount)
-	        
-		        #Keep track of where we are at clear during the read operation
-		        $numBytesRead += $bytecount
+                        $byteCount = $fs.Read($readbuffer,0,1048576)
+                        $rs.write($readbuffer,0,$byteCount)
 
-		        #Use the Write-Progress cmd-let to show the progress of uploading the file.
+                        #Keep track of where we are at clear during the read operation
+                        $numBytesRead += $bytecount
+
+                        #Use the Write-Progress cmd-let to show the progress of uploading the file.
                 [int]$percent = (($numBytesRead / $fs.Length) * 100)
                 if ($percent -gt 100) { $percent = 100 }
                 $status = "(" + $numBytesRead + " of " + $numBytesToRead + ") Completed " + $percent + "%"
@@ -1629,7 +1629,7 @@ function Upload-File {
         }
 
         catch [System.Exception] {
-            
+
             Write-Error $_.Exception.Message -Category ConnectionError
 
             $uploadRequest = $Null
@@ -1650,15 +1650,15 @@ function Upload-File {
                 Write-Host 'Upload successful.'
 
             }
-           
+
             $uploadRequest = $Null
             $rs.close()
             $fs.close()
-                      
+
         }
 
         catch [Net.WebException] {
-            
+
 
             $rs.close()
             $fs.close()
@@ -1669,22 +1669,22 @@ function Upload-File {
 }
 
 function Download-File {
-	<#
+        <#
         .DESCRIPTION
-        Helper function to download content or tool from appliance.  
-                
+        Helper function to download content or tool from appliance.
+
         .PARAMETER uri
         The location where the content or tool will be downloaded from
-        
+
         .PARAMETER saveLocation
         The full path to where the Support Dump or backup will be saved to.  This path will not be validated in this helper function
-        
+
         .INPUTS
         None.  You cannot pipe objects to this cmdlet.
-                
+
         .OUTPUTS
         Downloads the requested file using net.WebRequest
-			
+
     #>
 
     [CmdLetBinding()]
@@ -1709,13 +1709,13 @@ function Download-File {
     )
 
     Begin {
-        
+
         write-verbose "[Download-File] Validating user is authenticated"
         verify-auth "Download-File"
     }
-    
-    Process{	
-    
+
+    Process{
+
         $fsCreate = [System.IO.FileAccess]::Create
         $fsWrite = [System.IO.FileAccess]::Write
 
@@ -1723,22 +1723,22 @@ function Download-File {
             $downloadUri = $uri
         }
         else {
-		    $downloadUri = "https://" + $script:HPICAppliance + $uri
+                    $downloadUri = "https://" + $script:HPICAppliance + $uri
         }
         write-Verbose "[Download-File] Download URI: $($downloadUri)"
 
-	    [System.Net.httpWebRequest]$fileDownload = [net.webRequest]::create($downloadUri)
-	    $fileDownload.Timeout = 1000000
-	    $fileDownload.method = "GET"
-	    $fileDownload.accept = "application/octet-stream,*/*"
-		$fileDownload.Headers.Item("auth") = $global:cimgmtSessionId.sessionID
-	    $fileDownload.Headers.Item("accept-charset") = "ISO-8859-1,utf-8"
-	    $fileDownload.Headers.Item("accept-encoding") = "gzip,deflate,sdch"
-	    $fileDownload.Headers.Item("accept-language") = "en_US"
+            [System.Net.httpWebRequest]$fileDownload = [net.webRequest]::create($downloadUri)
+            $fileDownload.Timeout = 1000000
+            $fileDownload.method = "GET"
+            $fileDownload.accept = "application/octet-stream,*/*"
+                $fileDownload.Headers.Item("auth") = $global:cimgmtICspSessionId.sessionID
+            $fileDownload.Headers.Item("accept-charset") = "ISO-8859-1,utf-8"
+            $fileDownload.Headers.Item("accept-encoding") = "gzip,deflate,sdch"
+            $fileDownload.Headers.Item("accept-language") = "en_US"
 
         $i=0
         foreach ($h in $fileDownload.Headers) { Write-Verbose "[Download-File] Request Header $($i): $($h) = $($fileDownload.Headers[$i])"; $i++}
-		    
+
         Write-Verbose "[Download-File] Request: GET $($fileDownload | out-string)"
 
         #Get response
@@ -1752,16 +1752,16 @@ function Download-File {
 
         #Request is a redirect to download file contained in the response headers
         if (($rs.headers["Content-Disposition"]) -and ($rs.headers["Content-Disposition"].StartsWith("attachment; filename=")) -and (!$fileName)) {
-        
+
             $fileName = ($rs.headers["Content-Disposition"].Substring(21)) -replace "`"",""
-        
+
         }
-     
+
         Write-Verbose "[Download-File] Filename: $($fileName)"
-	    Write-Verbose "[Download-File] Filesize:  $($rs.ContentLength)"
+            Write-Verbose "[Download-File] Filesize:  $($rs.ContentLength)"
 
         #Decompress the response if encoded
-	    #Read from response and write to file
+            #Read from response and write to file
         switch ($rs.Headers.Item("Content-Encoding")) {
 
             "gzip"    { $stream = New-Object System.IO.Compression.GZipStream ($rs.GetResponseStream()),([IO.Compression.CompressionMode]::Decompress) }
@@ -1771,46 +1771,46 @@ function Download-File {
         }
 
 
-	    #Define buffer and buffer size
-		[int] $bufferSize = (4096*1024)
-	    [byte[]]$buffer = New-Object byte[] (4096*1024)
-	    [int] $bytesRead = 0
+            #Define buffer and buffer size
+                [int] $bufferSize = (4096*1024)
+            [byte[]]$buffer = New-Object byte[] (4096*1024)
+            [int] $bytesRead = 0
 
-	 
+
         Write-Verbose "[Download-File] Saving to $($saveLocation)\$($fileName)"
         $fs = New-Object IO.FileStream ($saveLocation + "\" + $fileName),'Create','Write','Read'
-	    #$fs = New-Object IO.FileStream (($saveLocation + "\" + $fileName[-1]), $fsCreate, $fsWrite)
-	    while (($bytesRead = $stream.Read($buffer, 0, $bufferSize)) -ne 0) {
-	        #Write from buffer to file
-			$byteCount = $fs.Write($buffer, 0, $bytesRead);
+            #$fs = New-Object IO.FileStream (($saveLocation + "\" + $fileName[-1]), $fsCreate, $fsWrite)
+            while (($bytesRead = $stream.Read($buffer, 0, $bufferSize)) -ne 0) {
+                #Write from buffer to file
+                        $byteCount = $fs.Write($buffer, 0, $bytesRead);
 
-	    }
+            }
 
-	    Write-Verbose "[Download-File] File saved to $($saveLocation)"
+            Write-Verbose "[Download-File] File saved to $($saveLocation)"
 
-	    #Clean up our work
-	    $stream.Close()
-	    $rs.Close()
-	    $fs.Close()
+            #Clean up our work
+            $stream.Close()
+            $rs.Close()
+            $fs.Close()
     }
  }
 
 function Watch-Job {
-	<#
+        <#
         .DESCRIPTION
-        Helper function to monitor the progress of a job.  
-                
+        Helper function to monitor the progress of a job.
+
         .PARAMETER resource
         The object returned from new job or new server cmdlets
-        
+
         .INPUTS
         System.Management.Automation.PSCustomObject
             Resource Object to pull a job uri from and monitor
-                
+
         .OUTPUTS
         System.Management.Automation.PSCustomObject
             The output of the completed job if it finishes or an error message if it fails.
-			
+
     #>
     [CmdletBinding()]
     Param (
@@ -1826,7 +1826,7 @@ function Watch-Job {
     while($status.running -eq $true){
 
         for($i=1 ; $i -le 50; $i++){
-            
+
             Write-Progress -id 1 -Activity ($status.name + ' Executing') -PercentComplete ($i*2);
             sleep(1)
         }
@@ -1868,9 +1868,9 @@ function Watch-Job {
 
 function Get-HPICServer {
    <#
-		.SYNOPSIS
-		List Server resources.
-	
+                .SYNOPSIS
+                List Server resources.
+
         .DESCRIPTION
         Obtain a collection of server resources, or a specific server with the specified URI.
 
@@ -1881,8 +1881,8 @@ function Get-HPICServer {
         None.  You cannot pipe objects to this cmdlet.
 
         .OUTPUTS
-		Single Server:  System.Management.Automation.PSCustomObject
-		Multiple Servers:  System.Array
+                Single Server:  System.Management.Automation.PSCustomObject
+                Multiple Servers:  System.Array
 
         .LINK
         Remove-HPICServer
@@ -1890,17 +1890,17 @@ function Get-HPICServer {
         .EXAMPLE
         PS C:\> $servers = Get-HPICServer
         Return all the servers managed by this appliance.
-        
+
         .EXAMPLE
         PS C:\> $serverA = Get-HPICServer /rest/os-deployment-servers/40001
         Return the server resource by its URI.
 
-    #> 
+    #>
     [CmdletBinding()]
-	Param (
-		[parameter(Mandatory=$false)]
-		[string]$name=$null
-	)
+        Param (
+                [parameter(Mandatory=$false)]
+                [string]$name=$null
+        )
 
     Begin {
         Write-Verbose "[GET-HPICSERVER] Verify auth"
@@ -1919,19 +1919,19 @@ function Get-HPICServer {
                 Write-Error -Message "Filter by name not available in version 102. Will be implemented in a future release. Please use resource URI." -Category 'NotEnabled' -CategoryReason 'NotEnabled'
 #               Write-Verbose "[GET-HPICSERVER] Filtering server list to include only $($name)"
 #               $svrs = $svrs.members | Where-Object {$_.name -eq $name}
-#			    if (!$svrs) {				
-#				    Write-Error -Message "Server $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
-#				    break
-#			    }
+#                           if (!$svrs) {
+#                                   Write-Error -Message "Server $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
+#                                   break
+#                           }
             } else {
                 $svrs = $svrs.members
             }
        }
-        return $svrs      
+        return $svrs
     }
 }
 
-function Set-HPICServer {   
+function Set-HPICServer {
     <#
         .SYNOPSIS
         Modify an existing server.
@@ -1982,9 +1982,9 @@ function Set-HPICServer {
     Process {
 
         if (!$resource) { Write-Error "The input parameter Server was Null. Please provide a value and try again." -Category InvalidArgument -CategoryTargetName "Set-HPICServer" ;break }
- 
-        Set-HPICResource $resource    
-    
+
+        Set-HPICResource $resource
+
     }
 }
 
@@ -2026,7 +2026,7 @@ function New-HPICServer {
         PS C:\> New-HPICServer -iLOIP 192.168.1.1 -iLOUserName user -iLOPassword example
 
         Adds a server to the appliance with the proper credentials
-    #>     
+    #>
     [CmdletBinding()]
     Param (
         [parameter(Mandatory=$true)]
@@ -2052,9 +2052,9 @@ function New-HPICServer {
     Process {
 
         $resource = @{username=$iLOUserName;password=$iLOPassword;ipAddress=$iLOIP;port=’443’}
-            
-        New-HPICResource $server $resource  
-    
+
+        New-HPICResource $server $resource
+
     }
 }
 
@@ -2087,10 +2087,10 @@ function Remove-HPICServer {
     #>
 
     [CmdletBinding()]
-	Param (
-		[parameter(Mandatory=$true)]
-		[string]$name=$null
-	)
+        Param (
+                [parameter(Mandatory=$true)]
+                [string]$name=$null
+        )
 
     Begin {
         Write-Verbose "[REMOVE-HPICSERVER] Verify auth"
@@ -2108,13 +2108,13 @@ function Remove-HPICServer {
 #           $srvrs = Send-HPICRequest $server
 #           Write-Verbose "[REMOVE-HPICSERVER] Filtering server list to include only $($name)"
 #           $srvrs = $srvrs.members | Where-Object {$_.name -eq $name}
-#			if (!$srvrs) {				
-#				Write-Error -Message "Server resource $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
-#				break
-# 			}
+#                       if (!$srvrs) {
+#                               Write-Error -Message "Server resource $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
+#                               break
+#                       }
 #            Remove-HPICResource -nameOrUri $srvrs
         }
-        
+
     }
 }
 
@@ -2124,9 +2124,9 @@ function Remove-HPICServer {
 
 function Get-HPICBuildPlan {
    <#
-		.SYNOPSIS
-		List OS Build Plan resources.
-	
+                .SYNOPSIS
+                List OS Build Plan resources.
+
         .DESCRIPTION
         Obtain a collection of OS Build Plan resources, or a specific Build Plan specified by URI.
 
@@ -2137,8 +2137,8 @@ function Get-HPICBuildPlan {
         None.  You cannot pipe objects to this cmdlet.
 
         .OUTPUTS
-		Single Build Plan:  System.Management.Automation.PSCustomObject
-		Multiple Build Plans:  System.Array
+                Single Build Plan:  System.Management.Automation.PSCustomObject
+                Multiple Build Plans:  System.Array
 
         .LINK
         Remove-HPICBuildPlan
@@ -2146,17 +2146,17 @@ function Get-HPICBuildPlan {
         .EXAMPLE
         PS C:\> $bps = Get-HPICBuildPlan
         Return all the build plans contained in this appliance.
-        
+
         .EXAMPLE
         PS C:\> $InstallX = Get-HPICBuildPlan /rest/os-deployment-build-plans/1840001
         Return the build plan resource specified by its URI.
 
-    #> 
+    #>
     [CmdletBinding()]
-	Param (
-		[parameter(Mandatory=$false)]
-		[string]$name=$null
-	)
+        Param (
+                [parameter(Mandatory=$false)]
+                [string]$name=$null
+        )
 
     Begin {
         Write-Verbose "[GET-HPICBUILDPLAN] Verify auth"
@@ -2175,15 +2175,15 @@ function Get-HPICBuildPlan {
                 Write-Error -Message "Filter by name not available in version 102. Will be implemented in a future release. Please use resource URI." -Category 'NotEnabled' -CategoryReason 'NotEnabled'
 #                Write-Verbose "[GET-HPICBUILDPLAN] Filtering build plan list to include only $($name)"
 #                $bps = $bps.members | Where-Object {$_.name -eq $name}
-#			    if (!$bps) {				
-#				    Write-Error -Message "Build Plan $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
-#				    break
-#			    }
+#                           if (!$bps) {
+#                                   Write-Error -Message "Build Plan $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
+#                                   break
+#                           }
             } else {
                 $bps = $bps.members
             }
         }
-        return $bps      
+        return $bps
     }
 }
 
@@ -2221,7 +2221,7 @@ function Set-HPICBuildPlan {
         PS C:\> Set-HPICBuildPlan $bp
 
         Rename a particular build plan as "Install OS".
-    #>    
+    #>
     [CmdletBinding()]
     Param (
         [parameter(Mandatory=$true,ValueFromPipeline=$true,HelpMessage="Enter the resource object definition.", position = 0)]
@@ -2239,10 +2239,10 @@ function Set-HPICBuildPlan {
     Process {
 
         if (!$resource) { Write-Error "The input parameter build plan was Null. Please provide a value and try again." -Category InvalidArgument -CategoryTargetName "Set-HPICBuildPlan" ;break }
- 
+
         Set-HPICResource $resource
-        
-    
+
+
     }
 }
 
@@ -2279,7 +2279,7 @@ function New-HPICBuildPlan {
         PS C:\> New-HPICBuildPlan $bp
 
         Create a Mutable Copy of a Build Plan.
-    #>        
+    #>
     [CmdletBinding()]
     Param (
         [parameter(Mandatory=$true,
@@ -2298,9 +2298,9 @@ function New-HPICBuildPlan {
     Process {
 
         if (!$resource) { Write-Error "The input parameter build plan was Null. Please provide a value and try again." -Category InvalidArgument -CategoryTargetName "New-HPICBuildPlan" ;break }
- 
-        New-HPICResource $buildplan $resource   
-    
+
+        New-HPICResource $buildplan $resource
+
     }
 }
 
@@ -2332,10 +2332,10 @@ function Remove-HPICBuildPlan {
 
     #>
     [CmdletBinding()]
-	Param (
-		[parameter(Mandatory=$true)]
-		[string]$name=$null
-	)
+        Param (
+                [parameter(Mandatory=$true)]
+                [string]$name=$null
+        )
 
     Begin {
         Write-Verbose "[REMOVE-HPICBUILDPLAN] Verify auth"
@@ -2353,14 +2353,14 @@ function Remove-HPICBuildPlan {
 #            $bps = Send-HPICRequest $buildplan
 #            Write-Verbose "[REMOVE-HPICBUILDPLAN] Filtering build plan list to include only $($name)"
 #            $bps = $bps.members | Where-Object {$_.name -eq $name}
-#			if (!$bps) {
-#				
-#				Write-Error -Message "Build Plan $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
-#				break
-#			}
+#                       if (!$bps) {
+#
+#                               Write-Error -Message "Build Plan $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
+#                               break
+#                       }
 #            Remove-HPICResource -nameOrUri $bps
         }
-        
+
     }
 }
 
@@ -2370,9 +2370,9 @@ function Remove-HPICBuildPlan {
 
 function Get-HPICServerScript {
    <#
-		.SYNOPSIS
-		List Server Script resources.
-	
+                .SYNOPSIS
+                List Server Script resources.
+
         .DESCRIPTION
         Obtain a collection of Server Script resources, or a specific Server Script by URI.
 
@@ -2383,8 +2383,8 @@ function Get-HPICServerScript {
         None.  You cannot pipe objects to this cmdlet.
 
         .OUTPUTS
-		Single Server Script:  System.Management.Automation.PSCustomObject
-		Multiple Server Scripts:  System.Array
+                Single Server Script:  System.Management.Automation.PSCustomObject
+                Multiple Server Scripts:  System.Array
 
         .LINK
         Remove-HPICServerScript
@@ -2392,23 +2392,23 @@ function Get-HPICServerScript {
         .EXAMPLE
         PS C:\> $scripts = Get-HPICServerScript
         Return all the server scripts contained in this appliance.
-        
+
         .EXAMPLE
         PS C:\> $cleanDisks = Get-HPICServerScript /rest/os-deployment-server-scripts/770001
         Return the server script resource specified by URI.
 
-    #> 
+    #>
     [CmdletBinding()]
-	Param (
-		[parameter(Mandatory=$false)]
-		[string]$name=$null,
+        Param (
+                [parameter(Mandatory=$false)]
+                [string]$name=$null,
 
         [parameter(Mandatory=$false)]
         [int]$start=0,
 
         [parameter(Mandatory=$false)]
         [int]$count=0
-	)
+        )
 
     Begin {
         Write-Verbose "[GET-HPICSERVERSCRIPT] Verify auth"
@@ -2427,15 +2427,15 @@ function Get-HPICServerScript {
                 Write-Error -Message "Filter by name not available in version 102. Will be implemented in a future release. Please use resource URI." -Category 'NotEnabled' -CategoryReason 'NotEnabled'
 #                Write-Verbose "[GET-HPICSERVERSCRIPT] Filtering server script list to include only $($name)"
 #                $srvs = $srvs.members | Where-Object {$_.name -eq $name}
-#			    if (!$srvs) {				
-#				    Write-Error -Message "Server Script $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
-#				    break
-#			    }
+#                           if (!$srvs) {
+#                                   Write-Error -Message "Server Script $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
+#                                   break
+#                           }
             } else {
                 $srvs = $srvs.members
             }
         }
-        return $srvs      
+        return $srvs
     }
 }
 
@@ -2473,8 +2473,8 @@ function Set-HPICServerScript {
         PS C:\> Set-HPICServerScript $ss
 
         Rename a particular script as "Install OS".
-    #>  
-       
+    #>
+
     [CmdletBinding()]
     Param (
         [parameter(Mandatory=$true,ValueFromPipeline=$true,HelpMessage="Enter the resource object definition.", position = 0)]
@@ -2492,10 +2492,10 @@ function Set-HPICServerScript {
     Process {
 
         if (!$resource) { Write-Error "The input parameter Server Script was Null. Please provide a value and try again." -Category InvalidArgument -CategoryTargetName "Set-HPICServerScript" ;break }
- 
+
         Set-HPICResource $resource
-        
-    
+
+
     }
 }
 
@@ -2532,7 +2532,7 @@ function New-HPICServerScript {
         PS C:\> New-HPICServerScript $ss
 
         Create a Mutable Copy of a Server Script.
-    #>     
+    #>
     [CmdletBinding()]
     Param (
         [parameter(Mandatory=$true,
@@ -2551,9 +2551,9 @@ function New-HPICServerScript {
     Process {
 
         if (!$resource) { Write-Error "The input parameter Server Script was Null. Please provide a value and try again." -Category InvalidArgument -CategoryTargetName "New-HPICServerScript" ;break }
- 
-        New-HPICResource $serverScript $resource   
-    
+
+        New-HPICResource $serverScript $resource
+
     }
 }
 
@@ -2586,10 +2586,10 @@ function Remove-HPICServerScript {
     #>
 
     [CmdletBinding()]
-	Param (
-		[parameter(Mandatory=$true)]
-		[string]$name=$null
-	)
+        Param (
+                [parameter(Mandatory=$true)]
+                [string]$name=$null
+        )
 
     Begin {
         Write-Verbose "[REMOVE-HPICSERVERSCRIPT] Verify auth"
@@ -2607,13 +2607,13 @@ function Remove-HPICServerScript {
 #            $srvscripts = Send-HPICRequest $serverScript
 #            Write-Verbose "[REMOVE-HPICSERVERSCRIPT] Filtering server script list to include only $($name)"
 #            $srvscripts = $srvscripts.members | Where-Object {$_.name -eq $name}
-#			if (!$srvscripts) {				
-#				Write-Error -Message "Server Script $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
-#				break
-#			}
+#                       if (!$srvscripts) {
+#                               Write-Error -Message "Server Script $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
+#                               break
+#                       }
 #           Remove-HPICResource -nameOrUri $srvscripts
         }
-        
+
     }
 }
 
@@ -2623,9 +2623,9 @@ function Remove-HPICServerScript {
 
 function Get-HPICOgfsScript {
    <#
-		.SYNOPSIS
-		List OGFS Script resources.
-	
+                .SYNOPSIS
+                List OGFS Script resources.
+
         .DESCRIPTION
         Obtain a collection of OGFS Script resources, or a specific OGFS Script with the specified URI.
 
@@ -2636,8 +2636,8 @@ function Get-HPICOgfsScript {
         None.  You cannot pipe objects to this cmdlet.
 
         .OUTPUTS
-		Single OGFS Script:  System.Management.Automation.PSCustomObject
-		Multiple OGFS Scripts:  System.Array
+                Single OGFS Script:  System.Management.Automation.PSCustomObject
+                Multiple OGFS Scripts:  System.Array
 
         .LINK
         Remove-HPICOgfsScript
@@ -2645,23 +2645,23 @@ function Get-HPICOgfsScript {
         .EXAMPLE
         PS C:\> $scripts = Get-HPICOgfsScript
         Return all the OGFS scripts contained in this appliance.
-        
+
         .EXAMPLE
         PS C:\> $boot = Get-HPICOgfsScript /rest/os-deployment-ogfs-scripts/940001
         Return the OGFS Script resource with the specified URI.
 
-    #> 
+    #>
     [CmdletBinding()]
-	Param (
-		[parameter(Mandatory=$false)]
-		[string]$name=$null,
+        Param (
+                [parameter(Mandatory=$false)]
+                [string]$name=$null,
 
         [parameter(Mandatory=$false)]
         [int]$start=0,
 
         [parameter(Mandatory=$false)]
         [int]$count=0
-	)
+        )
 
     Begin {
         Write-Verbose "[GET-HPICOGFSCRIPT] Verify auth"
@@ -2680,15 +2680,15 @@ function Get-HPICOgfsScript {
                 Write-Error -Message "Filter by name not available in version 102. Will be implemented in a future release. Please use resource URI." -Category 'NotEnabled' -CategoryReason 'NotEnabled'
 #                Write-Verbose "[GET-HPICOGFSSCRIPT] Filtering OGFS scripts list to include only $($name)"
 #                $ogfs = $ogfs.members | Where-Object {$_.name -eq $name}
-#			    if (!$ogfs) {				
-#				    Write-Error -Message "OGFS Script $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
-#				    break
-#			    }
+#                           if (!$ogfs) {
+#                                   Write-Error -Message "OGFS Script $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
+#                                   break
+#                           }
             } else {
                 $ogfs = $ogfs.members
             }
         }
-        return $ogfs      
+        return $ogfs
     }
 }
 
@@ -2726,7 +2726,7 @@ function Set-HPICOgfsScript {
         PS C:\> Set-HPICOgfsScript $ogfs
 
        Rename a particular script as "Install OS".
-    #>      
+    #>
     [CmdletBinding()]
     Param (
         [parameter(Mandatory=$true,ValueFromPipeline=$true,HelpMessage="Enter the object resource definition.", position = 0)]
@@ -2744,10 +2744,10 @@ function Set-HPICOgfsScript {
     Process {
 
         if (!$resource) { Write-Error "The input parameter OGFS Script was Null. Please provide a value and try again." -Category InvalidArgument -CategoryTargetName "Set-HPICOgfsScript" ;break }
- 
+
         Set-HPICResource $resource
-        
-    
+
+
     }
 }
 
@@ -2784,7 +2784,7 @@ function New-HPICOgfsScript {
         PS C:\> New-HPICOgfsScript $ogfs
 
         Create a Mutable Copy of an OGFS Script.
-    #>        
+    #>
     [CmdletBinding()]
     Param (
         [parameter(Mandatory=$true,
@@ -2803,9 +2803,9 @@ function New-HPICOgfsScript {
     Process {
 
         if (!$resource) { Write-Error "The input parameter OGFS Script was Null. Please provide a value and try again." -Category InvalidArgument -CategoryTargetName "New-HPICOgfsScript" ;break }
- 
-        New-HPICResource $ogfsScript $resource    
-    
+
+        New-HPICResource $ogfsScript $resource
+
     }
 }
 
@@ -2837,10 +2837,10 @@ function Remove-HPICOgfsScript {
 
     #>
     [CmdletBinding()]
-	Param (
-		[parameter(Mandatory=$true)]
-		[string]$name=$null
-	)
+        Param (
+                [parameter(Mandatory=$true)]
+                [string]$name=$null
+        )
 
     Begin {
         Write-Verbose "[REMOVE-HPICOGFSSCRIPT] Verify auth"
@@ -2858,13 +2858,13 @@ function Remove-HPICOgfsScript {
 #            $ogfs = Send-HPICRequest $ogfsScript
 #            Write-Verbose "[REMOVE-HPICOGFSSCRIPT] Filtering OGFS scripts list to include only $($name)"
 #            $ogfs = $ogfs.members | Where-Object {$_.name -eq $name}
-#			if (!$ogfs) {				
-#				Write-Error -Message "OGFS script $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
-#				break
-#			}
+#                       if (!$ogfs) {
+#                               Write-Error -Message "OGFS script $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
+#                               break
+#                       }
 #            Remove-HPICResource -nameOrUri $ogfs
         }
-        
+
     }
 }
 
@@ -2874,9 +2874,9 @@ function Remove-HPICOgfsScript {
 
 function Get-HPICCfg {
    <#
-		.SYNOPSIS
-		List Configuration File resources.
-	
+                .SYNOPSIS
+                List Configuration File resources.
+
         .DESCRIPTION
         Obtain a collection of Configuration File resources, or a specific Configuration File with the specified URI.
 
@@ -2887,8 +2887,8 @@ function Get-HPICCfg {
         None.  You cannot pipe objects to this cmdlet.
 
         .OUTPUTS
-		Single Configuration File:  System.Management.Automation.PSCustomObject
-		Multiple Configuration Files:  System.Array
+                Single Configuration File:  System.Management.Automation.PSCustomObject
+                Multiple Configuration Files:  System.Array
 
         .LINK
         Remove-HPICCfg
@@ -2896,17 +2896,17 @@ function Get-HPICCfg {
         .EXAMPLE
         PS C:\> $cfg = Get-HPICCfg
         Return all the Configuration Files contained in this appliance.
-        
+
         .EXAMPLE
         PS C:\> $cfg = Get-HPICCfg /rest/os-deployment-install-cfgfiles/2130001
         Return the Configuration File resource by URI.
 
-    #> 
+    #>
     [CmdletBinding()]
-	Param (
-		[parameter(Mandatory=$false)]
-		[string]$name=$null
-	)
+        Param (
+                [parameter(Mandatory=$false)]
+                [string]$name=$null
+        )
 
     Begin {
         Write-Verbose "[GET-HPICCFG] Verify auth"
@@ -2925,15 +2925,15 @@ function Get-HPICCfg {
                 Write-Error -Message "Filter by name not available in version 102. Will be implemented in a future release. Please use resource URI." -Category 'NotEnabled' -CategoryReason 'NotEnabled'
 #                Write-Verbose "[GET-HPICCFG] Filtering Configuration File list to include only $($name)"
 #                $cfgfile = $cfgfile.members | Where-Object {$_.name -eq $name}
-#			    if (!$cfgfile) {	
-#				    Write-Error -Message "Configuration File resource $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
-#				    break
-#			    }
+#                           if (!$cfgfile) {
+#                                   Write-Error -Message "Configuration File resource $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
+#                                   break
+#                           }
             } else {
                 $cfgfile = $cfgfile.members
             }
         }
-        return $cfgfile      
+        return $cfgfile
     }
 }
 
@@ -2971,7 +2971,7 @@ function Set-HPICCfg {
         PS C:\> Set-HPICCfg $cfg
 
         Rename a particular CFG resource.
-    #>       
+    #>
     [CmdletBinding()]
     Param (
         [parameter(Mandatory=$true,ValueFromPipeline=$true,HelpMessage="Enter the object resource definition.", position = 0)]
@@ -2989,10 +2989,10 @@ function Set-HPICCfg {
     Process {
 
         if (!$resource) { Write-Error "The input parameter Configuration File resource was Null. Please provide a value and try again." -Category InvalidArgument -CategoryTargetName "Set-HPICCfg" ;break }
- 
+
         Set-HPICResource $resource
-        
-    
+
+
     }
 }
 
@@ -3029,8 +3029,8 @@ function New-HPICCfg {
         PS C:\> New-HPICCfg $cfg
 
         Create a Mutable Copy of a Configuration File.
-    #>    
-     
+    #>
+
     [CmdletBinding()]
     Param (
         [parameter(Mandatory=$true,
@@ -3049,9 +3049,9 @@ function New-HPICCfg {
     Process {
 
         if (!$resource) { Write-Error "The input parameter Configuration File resource was Null. Please provide a value and try again." -Category InvalidArgument -CategoryTargetName "New-HPICCfg" ;break }
- 
-        New-HPICResource $cfg $resource 
-    
+
+        New-HPICResource $cfg $resource
+
     }
 }
 
@@ -3084,10 +3084,10 @@ function Remove-HPICCfg {
 
     #>
     [CmdletBinding()]
-	Param (
-		[parameter(Mandatory=$true)]
-		[string]$name=$null
-	)
+        Param (
+                [parameter(Mandatory=$true)]
+                [string]$name=$null
+        )
 
     Begin {
         Write-Verbose "[REMOVE-HPICCFG] Verify auth"
@@ -3102,16 +3102,16 @@ function Remove-HPICCfg {
         else {
             Write-Error -Message "Filter by name not available in version 102. Will be implemented in a future release. Please use resource URI." -Category 'NotEnabled' -CategoryReason 'NotEnabled'
 #            Write-Verbose "[REMOVE-HPICCFG] Retrieving all Configuration File objects"
-#            $cfgfile = Send-HPICRequest $cfg 
+#            $cfgfile = Send-HPICRequest $cfg
 #            Write-Verbose "[REMOVE-HPICCFG] Filtering Configuration File list to include only $($name)"
 #            $cfgfile = $cfgfile.members | Where-Object {$_.name -eq $name}
-#			if (!$cfgfile) {				
-#				Write-Error -Message "Configuration File resource $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
-#				break
-#			}
+#                       if (!$cfgfile) {
+#                               Write-Error -Message "Configuration File resource $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
+#                               break
+#                       }
 #            Remove-HPICResource -nameOrUri $cfgfile
         }
-        
+
     }
 }
 
@@ -3122,9 +3122,9 @@ function Remove-HPICCfg {
 
 function Get-HPICDeviceGroup {
    <#
-		.SYNOPSIS
-		List Device Group resources.
-	
+                .SYNOPSIS
+                List Device Group resources.
+
         .DESCRIPTION
         Obtain a collection of Device Group resources, or a specific Device Group with the specified URI.
 
@@ -3135,8 +3135,8 @@ function Get-HPICDeviceGroup {
         None.  You cannot pipe objects to this cmdlet.
 
         .OUTPUTS
-		Single Device Group:  System.Management.Automation.PSCustomObject
-		Multiple Device Groups:  System.Array
+                Single Device Group:  System.Management.Automation.PSCustomObject
+                Multiple Device Groups:  System.Array
 
         .LINK
         Remove-HPICDeviceGroup
@@ -3144,17 +3144,17 @@ function Get-HPICDeviceGroup {
         .EXAMPLE
         PS C:\> $devg = Get-HPICDeviceGroup
         Return all the Device Groups contained in this appliance.
-        
+
         .EXAMPLE
         PS C:\> $devg = Get-HPICDeviceGroup /rest/os-deployment-device-groups/5910001
         Return the Device Group resource by URI.
 
-    #> 
+    #>
     [CmdletBinding()]
-	Param (
-		[parameter(Mandatory=$false)]
-		[string]$name=$null
-	)
+        Param (
+                [parameter(Mandatory=$false)]
+                [string]$name=$null
+        )
 
     Begin {
         Write-Verbose "[GET-HPICDEVICEGROUP] Verify auth"
@@ -3173,15 +3173,15 @@ function Get-HPICDeviceGroup {
                 Write-Error -Message "Filter by name not available in version 102. Will be implemented in a future release. Please use resource URI." -Category 'NotEnabled' -CategoryReason 'NotEnabled'
 #                Write-Verbose "[GET-HPICDEVICEGROUP] Filtering device group list to include only $($name)"
 #                $dgroup = $dgroup.members | Where-Object {$_.name -eq $name}
-#			    if (!$dgroup) {				
-#				    Write-Error -Message "Device group $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
-#				    break
-#			    }
+#                           if (!$dgroup) {
+#                                   Write-Error -Message "Device group $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
+#                                   break
+#                           }
             } else {
                 $dgroup = $dgroup.members
             }
         }
-        return $dgroup      
+        return $dgroup
     }
 }
 
@@ -3219,7 +3219,7 @@ function Set-HPICDeviceGroup {
         PS C:\> Set-HPICDeviceGroup $devg
 
         Rename a particular device group.
-    #>        
+    #>
     [CmdletBinding()]
     Param (
         [parameter(Mandatory=$true,ValueFromPipeline=$true,HelpMessage="Enter the object resource definition.", position = 0)]
@@ -3237,10 +3237,10 @@ function Set-HPICDeviceGroup {
     Process {
 
         if (!$resource) { Write-Error "The input parameter device group resource was Null. Please provide a value and try again." -Category InvalidArgument -CategoryTargetName "Set-HPICDeviceGroup" ;break }
- 
+
         Set-HPICResource $resource
-        
-    
+
+
     }
 }
 
@@ -3277,7 +3277,7 @@ function New-HPICDeviceGroup {
         PS C:\> New-HPICDeviceGroup $devg
 
         Create a copy of a Device Group.
-    #>     
+    #>
     [CmdletBinding()]
     Param (
         [parameter(Mandatory=$true,
@@ -3296,9 +3296,9 @@ function New-HPICDeviceGroup {
     Process {
 
         if (!$resource) { Write-Error "The input parameter Device Group resource was Null. Please provide a value and try again." -Category InvalidArgument -CategoryTargetName "New-HPICDeviceGroup" ;break }
- 
-        New-HPICResource $deviceGroup $resource     
-    
+
+        New-HPICResource $deviceGroup $resource
+
     }
 }
 
@@ -3331,10 +3331,10 @@ function Remove-HPICDeviceGroup {
 
     #>
     [CmdletBinding()]
-	Param (
-		[parameter(Mandatory=$true)]
-		[string]$name=$null
-	)
+        Param (
+                [parameter(Mandatory=$true)]
+                [string]$name=$null
+        )
 
     Begin {
         Write-Verbose "[REMOVE-HPICDEVICEGROUP] Verify auth"
@@ -3352,13 +3352,13 @@ function Remove-HPICDeviceGroup {
 #            $dgroup = Send-HPICRequest $deviceGroup
 #            Write-Verbose "[REMOVE-HPICDEVICEGROUP] Filtering device group list to include only $($name)"
 #            $dgroup = $dgroup.members | Where-Object {$_.name -eq $name}
-#			if (!$dgroup) {				
-#				Write-Error -Message "Device Group resource $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
-#				break
-#			}
+#                       if (!$dgroup) {
+#                               Write-Error -Message "Device Group resource $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
+#                               break
+#                       }
 #            Remove-HPICResource -nameOrUri $dgroup
         }
-        
+
     }
 }
 
@@ -3368,9 +3368,9 @@ function Remove-HPICDeviceGroup {
 
 function Get-HPICFacility {
    <#
-		.SYNOPSIS
-		List Facility resources
-	
+                .SYNOPSIS
+                List Facility resources
+
         .DESCRIPTION
         Obtain the Facility Resource for the appliance.
 
@@ -3381,18 +3381,18 @@ function Get-HPICFacility {
         None.  You cannot pipe objects to this cmdlet.
 
         .OUTPUTS
-		Single Facility:  System.Management.Automation.PSCustomObject
+                Single Facility:  System.Management.Automation.PSCustomObject
 
         .EXAMPLE
         PS C:\> $fac = Get-HPICFacility
         Return the Facility contained in this appliance.
 
-    #> 
+    #>
     [CmdletBinding()]
-	Param (
-		[parameter(Mandatory=$false)]
-		[string]$name=$null
-	)
+        Param (
+                [parameter(Mandatory=$false)]
+                [string]$name=$null
+        )
 
     Begin {
         Write-Verbose "[GET-HPICFACILITY] Verify auth"
@@ -3411,15 +3411,15 @@ function Get-HPICFacility {
                 Write-Error -Message "Filter by name not available in version 102. Will be implemented in a future release. Please use resource URI." -Category 'NotEnabled' -CategoryReason 'NotEnabled'
 #                Write-Verbose "[GET-HPICFACILITY] Filtering facility list to include only $($name)"
 #                $fcl = $fcl.members | Where-Object {$_.name -eq $name}
-#			    if (!$fcl) {				
-#				    Write-Error -Message "Facility $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
-#				    break
-#			    }
+#                           if (!$fcl) {
+#                                   Write-Error -Message "Facility $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
+#                                   break
+#                           }
             } else {
                 $fcl = $fcl.members
             }
         }
-        return $fcl      
+        return $fcl
     }
 }
 
@@ -3451,7 +3451,7 @@ function Set-HPICFacility {
         PS C:\> Set-HPICFacility $fac
 
         Set "Appliance" to be renamed as "NewName".
-    #>       
+    #>
     [CmdletBinding()]
     Param (
         [parameter(Mandatory=$true,ValueFromPipeline=$true,HelpMessage="Enter the object resource definition.", position = 0)]
@@ -3469,10 +3469,10 @@ function Set-HPICFacility {
     Process {
 
         if (!$resource) { Write-Error "The input parameter facility resource was Null. Please provide a value and try again." -Category InvalidArgument -CategoryTargetName "Set-HPICFacility" ;break }
- 
+
         Set-HPICResource $resource
-        
-    
+
+
     }
 }
 
@@ -3482,9 +3482,9 @@ function Set-HPICFacility {
 
 function Get-HPICPackage {
    <#
-		.SYNOPSIS
-		List Package resources.
-	
+                .SYNOPSIS
+                List Package resources.
+
         .DESCRIPTION
         Obtain a collection of Package resources, or a specific Package with the specified URI.
 
@@ -3495,23 +3495,23 @@ function Get-HPICPackage {
         None.  You cannot pipe objects to this cmdlet.
 
         .OUTPUTS
-		Single Package:  System.Management.Automation.PSCustomObject
-		Multiple Packages:  System.Array
+                Single Package:  System.Management.Automation.PSCustomObject
+                Multiple Packages:  System.Array
 
         .EXAMPLE
         PS C:\> $package = Get-HPICPackage
         Return all the Packages contained in this appliance.
-        
+
         .EXAMPLE
         PS C:\> $package = Get-HPICPackage /rest/os-deployment-install-zips/3040001
         Return the Package resource with specified URI.
 
-    #> 
+    #>
     [CmdletBinding()]
-	Param (
-		[parameter(Mandatory=$false)]
-		[string]$name=$null
-	)
+        Param (
+                [parameter(Mandatory=$false)]
+                [string]$name=$null
+        )
 
     Begin {
         Write-Verbose "[GET-HPICPACKAGE] Verify auth"
@@ -3530,15 +3530,15 @@ function Get-HPICPackage {
                 Write-Error -Message "Filter by name not available in version 102. Will be implemented in a future release. Please use resource URI." -Category 'NotEnabled' -CategoryReason 'NotEnabled'
 #                Write-Verbose "[GET-HPICPACKAGE] Filtering package list to include only $($name)"
 #                $zips = $zips.members | Where-Object {$_.name -eq $name}
-#			    if (!$zips) {				
-#				    Write-Error -Message "Package $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
-#				    break
-#			    }
+#                           if (!$zips) {
+#                                   Write-Error -Message "Package $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
+#                                   break
+#                           }
             } else {
                 $zips = $zips.members
             }
         }
-        return $zips      
+        return $zips
     }
 }
 
@@ -3548,9 +3548,9 @@ function Get-HPICPackage {
 
 function Get-HPICSetting {
    <#
-		.SYNOPSIS
-		List Settings resources.
-	
+                .SYNOPSIS
+                List Settings resources.
+
         .DESCRIPTION
         Obtain a collection of Settings resources, or a specific Setting with the specified URI.
 
@@ -3561,27 +3561,27 @@ function Get-HPICSetting {
         None.  You cannot pipe objects to this cmdlet.
 
         .OUTPUTS
-		Single Setting:  System.Management.Automation.PSCustomObject
-		Multiple Settings:  System.Array
+                Single Setting:  System.Management.Automation.PSCustomObject
+                Multiple Settings:  System.Array
 
         .EXAMPLE
         PS C:\> $set = Get-HPICSetting
         Return all the Setting contained in this appliance.
-        
+
         .EXAMPLE
         PS C:\> $set = Get-HPICSetting /rest/os-deployment-settings/OsdDhcpConfig
         Return the Setting resource by its URI.
 
-    #> 
+    #>
     [CmdletBinding()]
-	Param (
-		[parameter(Mandatory=$false)]
-		[string]$name=$null
-	)
+        Param (
+                [parameter(Mandatory=$false)]
+                [string]$name=$null
+        )
 
     Begin {
         Write-Verbose "[GET-HPICSETTING] Verify auth"
-        verify-auth "Get-HPICSetting" 
+        verify-auth "Get-HPICSetting"
     }
 
     Process {
@@ -3596,17 +3596,17 @@ function Get-HPICSetting {
                 Write-Error -Message "Filter by name not available in version 102. Will be implemented in a future release. Please use resource URI." -Category 'NotEnabled' -CategoryReason 'NotEnabled'
 #                Write-Verbose "[GET-HPICSETTING] Filtering settings to include only $($name)"
 #               $stng = $stng.members | Where-Object {$_.name -eq $name}
-#			    if (!$stng) {				
-#				    Write-Error -Message "Setting $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
-#				    break
-#			    }
+#                           if (!$stng) {
+#                                   Write-Error -Message "Setting $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
+#                                   break
+#                           }
             } else {
                 $stng = $stng.members
             }
         }
-        return $stng      
+        return $stng
     }
- 
+
 }
 
 function Set-HPICDHCPSetting {
@@ -3618,10 +3618,10 @@ function Set-HPICDHCPSetting {
         Updates DHCP Settings for the appliance.
 
         .PARAMETER body
-        The properly formatted body to be converted to JSON. 
+        The properly formatted body to be converted to JSON.
 
         .INPUTS
-        None.  You cannot pipe objects to this cmdlet. 
+        None.  You cannot pipe objects to this cmdlet.
 
         .OUTPUTS
         System.Array
@@ -3635,7 +3635,7 @@ function Set-HPICDHCPSetting {
         PS C:\> Set-HPICDHCPSetting $resource
         This example passes in updated values to set for the appliance's DHCP configuration.
     #>
-         
+
     [CmdletBinding()]
     Param (
 
@@ -3649,10 +3649,10 @@ function Set-HPICDHCPSetting {
         verify-auth "Set-HPICDHCPSetting"
     }
 
-    
+
     Process {
 
-        Send-HPICRequest $DHCPconfig PUT $body    
+        Send-HPICRequest $DHCPconfig PUT $body
     }
 }
 
@@ -3662,7 +3662,7 @@ function Import-HPICWinPE {
         Upload a WinPE file to the appliance.
 
         .DESCRIPTION
-        This cmd provides the ability to upload a WinPE zip into the appliance.  It will return after the upload has completed. 
+        This cmd provides the ability to upload a WinPE zip into the appliance.  It will return after the upload has completed.
 
         .PARAMETER File
         The full path and file name of the SPP file.  The function returns an error if the file path cannot be validated.
@@ -3673,20 +3673,20 @@ function Import-HPICWinPE {
         .OUTPUTS
         System.Management.Automation.PSCustomObject
         The progress of uploading the file to the appliance, and completion result.
-		
+
         .EXAMPLE
         PS C:\> Import-HPICWinPE "C:\Users\me\Documents\winPE.zip"
-		
+
         Upload WinPE to the appliance
     #>
-	[CmdletBinding(DefaultParameterSetName='Update',SupportsShouldProcess=$True,ConfirmImpact='High')]
-	Param (
-		[parameter(Mandatory=$true)]
+        [CmdletBinding(DefaultParameterSetName='Update',SupportsShouldProcess=$True,ConfirmImpact='High')]
+        Param (
+                [parameter(Mandatory=$true)]
         [Alias('f')]
         [ValidateScript({Test-Path $_})]
         [string]$File
 
-	)
+        )
 
     Begin {
 
@@ -3695,11 +3695,11 @@ function Import-HPICWinPE {
     }
 
     Process {
-      
+
     Write-Verbose "[IMPORT-HPICWINPE] - UPLOAD FILE: $($File)"
 
     $upload = Upload-File $WinPE $File
-          
+
     }
 }
 
@@ -3710,7 +3710,7 @@ function Import-HPICContent {
 
         .DESCRIPTION
         This cmd provides the ability to import an appliance's exported content.  It will return after the upload has completed.
-        Useful when syncing user-defined build plans among appliances. 
+        Useful when syncing user-defined build plans among appliances.
 
         .PARAMETER File
         The full path and file name of the content zip.  The function returns an error if the file path cannot be validated.
@@ -3721,19 +3721,19 @@ function Import-HPICContent {
         .OUTPUTS
         System.Management.Automation.PSCustomObject
         The progress of uploading the file to the appliance, and completion result.
-		
+
         .EXAMPLE
         PS C:\> Import-HPICContent "C:\Users\me\Documents\content_export-2014_07_30-15_42_41.zip"
-		
+
         Upload zipped content to the appliance
     #>
-	[CmdletBinding(DefaultParameterSetName='Update',SupportsShouldProcess=$True,ConfirmImpact='High')]
-	Param (
-		[parameter(Mandatory=$true)]
+        [CmdletBinding(DefaultParameterSetName='Update',SupportsShouldProcess=$True,ConfirmImpact='High')]
+        Param (
+                [parameter(Mandatory=$true)]
         [Alias('f')]
         [ValidateScript({Test-Path $_})]
         [string]$File
-	)
+        )
 
     Begin {
 
@@ -3742,22 +3742,22 @@ function Import-HPICContent {
     }
 
     Process {
-      
+
     Write-Verbose "[IMPORT-HPICCONTENT] - UPLOAD FILE: $($File)"
 
     $upload = Upload-File $importContent $File
-          
+
     }
 }
 
 function Export-HPICContent {
-	<#
+        <#
         .SYNOPSIS
         Download appliance zipped content.
 
         .DESCRIPTION
         Use this cmdlet to download the appliance zipped content.
-        
+
         .PARAMETER Location
         The full path to where the zipped content will be saved to.  If omitted, current directory location will be used.
 
@@ -3766,19 +3766,19 @@ function Export-HPICContent {
 
         .INPUTS
         None.  You cannot pipe objects to this cmdlet.
-                
+
         .OUTPUTS
         The generated zipped file.
 
         .LINK
-		Send-HPICRequest
+                Send-HPICRequest
 
         .LINK
         Download-File
 
         .EXAMPLE
         PS C:\> Export-HPICContent 'c:\temp'
-		Save the Appliance content to C:\Temp
+                Save the Appliance content to C:\Temp
     #>
     [CmdLetBinding(DefaultParameterSetName="default")]
     Param (
@@ -3796,7 +3796,7 @@ function Export-HPICContent {
         verify-auth "Export-HPICContent"
 
         #Validate the path exists.  If not, create it.
-		if (!(Test-Path $Location)){ 
+                if (!(Test-Path $Location)){
             write-verbose "[EXPORT-HPICCONTENT] Directory does not exist.  Creating directory..."
             New-Item $Location -itemtype directory
         }
@@ -3804,29 +3804,29 @@ function Export-HPICContent {
     }
 
     Process {
-        
+
         write-verbose "[EXPORT-HPICCONTENT] Downloading content to $($Location)"
-		Download-File $exportContent $Location -fileName $fileName
+                Download-File $exportContent $Location -fileName $fileName
     }
 }
 
 function Get-HPICTool{
-	<#
+        <#
         .SYNOPSIS
         Download an appliance tool.
 
         .DESCRIPTION
         Use this cmdlet to download either the MediaServerTool or WinPETool
-        
+
         .PARAMETER Location
         The full path to where the tool executable will be saved to.  If omitted, current directory location will be used.
-        
+
         .PARAMETER toolName
         The name of the tool to download; either MediaServerTool or WinPETool
 
         .INPUTS
         None.  You cannot pipe objects to this cmdlet.
-                
+
         .OUTPUTS
         The generated File
 
@@ -3836,7 +3836,7 @@ function Get-HPICTool{
         .EXAMPLE
         PS C:\> Get-HPICTool -toolName 'MediaServerTool' -Location c:\temp
 
-		Save the Media Server Tool to C:\Temp
+                Save the Media Server Tool to C:\Temp
     #>
     [CmdLetBinding(DefaultParameterSetName="default")]
     Param (
@@ -3845,7 +3845,7 @@ function Get-HPICTool{
         [string]$Location = (get-location).Path,
 
         [parameter(Mandatory=$true,HelpMessage="Specify the tool to download; WinPETool or MediaServerTool")]
-		[string]$toolName,
+                [string]$toolName,
 
         [parameter(Mandatory=$false)]
         [string]$fileName=$null
@@ -3857,7 +3857,7 @@ function Get-HPICTool{
         verify-auth "Get-HPICTool"
 
         #Validate the path exists.  If not, create it.
-		if (!(Test-Path $Location)){ 
+                if (!(Test-Path $Location)){
             write-verbose "[Backup-HPICTool] Directory does not exist.  Creating directory..."
             New-Item $Location -itemtype directory
         }
@@ -3869,13 +3869,13 @@ function Get-HPICTool{
     }
 
     Process {
-        
-		#Send the request
-		write-verbose "[GET-HPICTOOL] Please wait while the tool is generated.  This can take a few minutes..."
+
+                #Send the request
+                write-verbose "[GET-HPICTOOL] Please wait while the tool is generated.  This can take a few minutes..."
 
         write-verbose "[GET-HPICTOOL] Downloading backup to $($Location)"
         $address = $tools +$toolName
-		Download-File $address $Location -fileName $fileName
+                Download-File $address $Location -fileName $fileName
     }
 }
 
@@ -3885,9 +3885,9 @@ function Get-HPICTool{
 
 function Get-HPICJob {
    <#
-		.SYNOPSIS
-		List Job resources.
-	
+                .SYNOPSIS
+                List Job resources.
+
         .DESCRIPTION
         Obtain a collection of Job resources, or a specific Job with the specified URI.
 
@@ -3898,23 +3898,23 @@ function Get-HPICJob {
         None.  You cannot pipe objects to this cmdlet.
 
         .OUTPUTS
-		Single Job:  System.Management.Automation.PSCustomObject
-		Multiple Jobs:  System.Array
+                Single Job:  System.Management.Automation.PSCustomObject
+                Multiple Jobs:  System.Array
 
         .EXAMPLE
         PS C:\> $allJobs = Get-HPICJob
         Return all the Jobs contained in this appliance.
-        
+
         .EXAMPLE
         PS C:\> $specificJob = Get-HPICPackage /rest/os-deployment-jobs/1920001
         Return a particular job resource by its URI.
 
-    #> 
+    #>
     [CmdletBinding()]
-	Param (
-		[parameter(Mandatory=$false)]
-		[string]$name=$null
-	)
+        Param (
+                [parameter(Mandatory=$false)]
+                [string]$name=$null
+        )
 
     Begin {
         Write-Verbose "[GET-HPICJOB] Verify auth"
@@ -3933,15 +3933,15 @@ function Get-HPICJob {
                 Write-Error -Message "Filter by name not available in version 102. Will be implemented in a future release. Please use resource URI." -Category 'NotEnabled' -CategoryReason 'NotEnabled'
 #                Write-Verbose "[GET-HPICJOB] Filtering job list to include only $($name)"
 #                $jobs = $jobs.members | Where-Object {$_.name -eq $name}
-#			    if (!$jobs) {			
-#				    Write-Error -Message "Job $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
-#				    break
-#			    }
+#                           if (!$jobs) {
+#                                   Write-Error -Message "Job $name not found. Please check the name again, and verify it exists." -Category 'ObjectNotFound' -CategoryReason 'ObjectNotFound'
+#                                   break
+#                           }
             } else {
                 $jobs = $jobs.members
             }
         }
-        return $jobs      
+        return $jobs
     }
 }
 
@@ -3996,8 +3996,8 @@ function New-HPICJob {
                 New-HPICJob $body | Watch-Job
         Run a Build Plan on a particular server, change the host name and display name and pipe output into Watch-Job CMDlet.
 
-    #>    
-     
+    #>
+
     [CmdletBinding()]
     Param (
 
@@ -4008,10 +4008,10 @@ function New-HPICJob {
 
         [parameter(Mandatory=$false,
         HelpMessage="Enter the runtime in proper format")]
-		[string]$runtime=$null,
+                [string]$runtime=$null,
 
         [parameter(Mandatory=$false)]
-		[string]$jobname=$null
+                [string]$jobname=$null
     )
 
     Begin {
@@ -4022,7 +4022,7 @@ function New-HPICJob {
 
 
     Process {
-       
+
 
 
         $uri = $script:job
@@ -4036,11 +4036,11 @@ function New-HPICJob {
         elseif($jobname){
             $uri += '?title=' + $jobname
         }
-        
+
         Write-Verbose $uri
 
         Send-HPICRequest $uri POST $resource
-    
+
     }
 }
 
@@ -4050,7 +4050,7 @@ function Stop-HPICJob {
         Stop a running or scheduled job.
 
         .DESCRIPTION
-        Forces a stop on running or scheduled build plans on all servers within a job. 
+        Forces a stop on running or scheduled build plans on all servers within a job.
 
         .PARAMETER jobstop
         The rest uri of the job to be stopped.
@@ -4063,7 +4063,7 @@ function Stop-HPICJob {
 
         Stops a job identified by its URI.
 
-    #>      
+    #>
     [CmdletBinding()]
     Param (
 
@@ -4081,7 +4081,7 @@ function Stop-HPICJob {
 
 
     Process {
-       
+
         $jobToParse = Get-HPICJob $jobstop
 
         if ($jobToParse.name -ne 'Run OS Build Plans') {
@@ -4111,7 +4111,7 @@ function Stop-HPICJob {
 
                     $uri = $jobstop + '/stop?bp=' + $bpID + '&server=' + $servID
                     Write-Verbose "[STOP-HPICJOB] $($uri)"
-                    
+
                     Send-HPICRequest $uri PUT $null
                 }
 
@@ -4129,7 +4129,7 @@ function Stop-HPICJob {
 
             Send-HPICRequest $uri PUT $body
 
-        }   
+        }
     }
 }
 
@@ -4217,12 +4217,12 @@ function global:prompt {
     }
 
     Write-Host '[HPIC]: ' -ForegroundColor Yellow -NoNewline
-	if ($global:cimgmtSessionId){
-    	write-host $script:userName@$Script:PromptApplianceHostname PS $cwd>  -NoNewline
-	}
-	else{
-		write-host $Script:PromptApplianceHostname PS $cwd>  -NoNewline
-	}
+        if ($global:cimgmtICspSessionId){
+        write-host $script:userName@$Script:PromptApplianceHostname PS $cwd>  -NoNewline
+        }
+        else{
+                write-host $Script:PromptApplianceHostname PS $cwd>  -NoNewline
+        }
     return " "
 
 }
