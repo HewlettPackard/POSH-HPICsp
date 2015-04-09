@@ -229,10 +229,10 @@ function Send-HPICRequest {
 
         #Check for global CertificatePolicy having been reset by some other code
         if (($script:SSLCheckFlag) -and (! [System.Net.ServicePointManager]::CertificatePolicy)) {
-      
+
             #If cert is untrusted, set ServicePointManager to ignore cert checking
             if ($global:icspCertTrusted -eq $False) { [System.Net.ServicePointManager]::CertificatePolicy = new-object HPInsightControlIgnoreCertPolicy }
-            
+
         }
 
         #Check how to handle SSL Certificates
@@ -1307,7 +1307,7 @@ function Show-HPICSSLCertificate {
         #Attempt connection to appliance.
         try { $Response = $WebRequest.GetResponse() }
 
-        catch { write-verbose $error[-1]; write-verbose "[SHOW-HPICSSLCertificate] Error caught, likely untrusted certificate."}
+        catch { write-verbose $_.Exception.Message; write-verbose "[SHOW-HPICSSLCertificate] Error caught, likely untrusted certificate."}
 
         #Close the response connection, as it is no longer needed, and will cause problems if left open.
         if ($response) { write-verbose "Closing response connection"; $Response.Close() }
