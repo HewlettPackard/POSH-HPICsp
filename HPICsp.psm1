@@ -227,6 +227,14 @@ function Send-HPICRequest {
     Begin {
 
 
+        #Check for global CertificatePolicy having been reset by some other code
+        if (($script:SSLCheckFlag) -and (! [System.Net.ServicePointManager]::CertificatePolicy)) {
+      
+            #If cert is untrusted, set ServicePointManager to ignore cert checking
+            if ($global:icspCertTrusted -eq $False) { [System.Net.ServicePointManager]::CertificatePolicy = new-object HPInsightControlIgnoreCertPolicy }
+            
+        }
+
         #Check how to handle SSL Certificates
         if (! $script:SSLCheckFlag) {
 
